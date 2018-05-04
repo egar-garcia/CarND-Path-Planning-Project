@@ -1,5 +1,4 @@
 #include <fstream>
-#include <math.h>
 #include <uWS/uWS.h>
 #include <chrono>
 #include <iostream>
@@ -8,33 +7,19 @@
 #include "Eigen-3.3/Eigen/Core"
 #include "Eigen-3.3/Eigen/QR"
 #include "json.hpp"
-#include "spline.h"
+#include "path_planner.h"
 
 using namespace std;
 
 // for convenience
 using json = nlohmann::json;
 
-// For converting back and forth between radians and degrees.
-constexpr double pi() { return M_PI; }
-double deg2rad(double x) { return x * pi() / 180; }
-double rad2deg(double x) { return x * 180 / pi(); }
-double normalizeAngle(double x) {
-  double n_x = x;
-  while (n_x < -pi()) {
-    n_x += 2 * pi();
-  }
-  while (n_x > pi()) {
-    n_x -= 2 * pi();
-  }
-  return n_x;
-}
-
-// Useful values
-double max_velocity_mph = 50.0; // max 50 mph
-double desired_velocity = ((max_velocity_mph - 1) * 1609.34) / (60.0 * 60.0); // desired velocity in m/s
-double move_time = 20.0 / 1000.0;
-double no_next_vals = 100;
+const double MAX_SPEED_MPH = 50.0; // Max 50 mph
+const double MOVE_TIME = 20.0 / 1000.0; // Update each 0.02 seconds
+const double MAX_ACCELERATION = 5.0; // Acceletion in m/s^2 - max is 10 m/s^2
+const double SECURITY_SECONDS_AHEAD = 2.0; //3.0;
+const double PLANNING_SECONDS_AHEAD = 1.0; //1.5;
+const double ACTION_SECONDS = 2.0;
 
 // Checks if the SocketIO event has JSON data.
 // If there is data the JSON object in string format will be returned,
@@ -51,250 +36,12 @@ string hasData(string s) {
   return "";
 }
 
-double distance(double x1, double y1, double x2, double y2)
-{
-	return sqrt((x2-x1)*(x2-x1)+(y2-y1)*(y2-y1));
-}
-int ClosestWaypoint(double x, double y, const vector<double> &maps_x, const vector<double> &maps_y)
-{
-
-	double closestLen = 100000; //large number
-	int closestWaypoint = 0;
-
-	for(int i = 0; i < maps_x.size(); i++)
-	{
-		double map_x = maps_x[i];
-		double map_y = maps_y[i];
-		double dist = distance(x,y,map_x,map_y);
-		if(dist < closestLen)
-		{
-			closestLen = dist;
-			closestWaypoint = i;
-		}
-
-	}
-
-	return closestWaypoint;
-
-}
-
-int NextWaypoint(double x, double y, double theta, const vector<double> &maps_x, const vector<double> &maps_y)
-{
-
-	int closestWaypoint = ClosestWaypoint(x,y,maps_x,maps_y);
-
-	double map_x = maps_x[closestWaypoint];
-	double map_y = maps_y[closestWaypoint];
-
-	double heading = atan2((map_y-y),(map_x-x));
-
-	double angle = fabs(theta-heading);
-  angle = min(2*pi() - angle, angle);
-
-  if(angle > pi()/4)
-  {
-    closestWaypoint++;
-  if (closestWaypoint == maps_x.size())
-  {
-    closestWaypoint = 0;
-  }
-  }
-
-  return closestWaypoint;
-}
-
-// Transform from Cartesian x,y coordinates to Frenet s,d coordinates
-vector<double> getFrenet(double x, double y, double theta, const vector<double> &maps_x, const vector<double> &maps_y)
-{
-	int next_wp = NextWaypoint(x,y, theta, maps_x,maps_y);
-
-	int prev_wp;
-	prev_wp = next_wp-1;
-	if(next_wp == 0)
-	{
-		prev_wp  = maps_x.size()-1;
-	}
-
-	double n_x = maps_x[next_wp]-maps_x[prev_wp];
-	double n_y = maps_y[next_wp]-maps_y[prev_wp];
-	double x_x = x - maps_x[prev_wp];
-	double x_y = y - maps_y[prev_wp];
-
-	// find the projection of x onto n
-	double proj_norm = (x_x*n_x+x_y*n_y)/(n_x*n_x+n_y*n_y);
-	double proj_x = proj_norm*n_x;
-	double proj_y = proj_norm*n_y;
-
-	double frenet_d = distance(x_x,x_y,proj_x,proj_y);
-
-	//see if d value is positive or negative by comparing it to a center point
-
-	double center_x = 1000-maps_x[prev_wp];
-	double center_y = 2000-maps_y[prev_wp];
-	double centerToPos = distance(center_x,center_y,x_x,x_y);
-	double centerToRef = distance(center_x,center_y,proj_x,proj_y);
-
-	if(centerToPos <= centerToRef)
-	{
-		frenet_d *= -1;
-	}
-
-	// calculate s value
-	double frenet_s = 0;
-	for(int i = 0; i < prev_wp; i++)
-	{
-		frenet_s += distance(maps_x[i],maps_y[i],maps_x[i+1],maps_y[i+1]);
-	}
-
-	frenet_s += distance(0,0,proj_x,proj_y);
-
-	return {frenet_s,frenet_d};
-
-}
-
-// Transform from Frenet s,d coordinates to Cartesian x,y
-vector<double> getXY(double s, double d, const vector<double> &maps_s, const vector<double> &maps_x, const vector<double> &maps_y)
-{
-	int prev_wp = -1;
-
-	while(s > maps_s[prev_wp+1] && (prev_wp < (int)(maps_s.size()-1) ))
-	{
-		prev_wp++;
-	}
-
-	int wp2 = (prev_wp+1)%maps_x.size();
-
-	double heading = atan2((maps_y[wp2]-maps_y[prev_wp]),(maps_x[wp2]-maps_x[prev_wp]));
-	// the x,y,s along the segment
-	double seg_s = (s-maps_s[prev_wp]);
-
-	double seg_x = maps_x[prev_wp]+seg_s*cos(heading);
-	double seg_y = maps_y[prev_wp]+seg_s*sin(heading);
-
-	double perp_heading = heading-pi()/2;
-
-	double x = seg_x + d*cos(perp_heading);
-	double y = seg_y + d*sin(perp_heading);
-
-	return {x,y};
-
-}
-
-/*
-// Evaluate a polynomial.
-double polyeval(Eigen::VectorXd coeffs, double x) {
-  double result = 0.0;
-  for (int i = 0; i < coeffs.size(); i++) {
-    result += coeffs[i] * pow(x, i);
-  }
-  return result;
-}
-
-// Fit a polynomial.
-// Adapted from
-// https://github.com/JuliaMath/Polynomials.jl/blob/master/src/Polynomials.jl#L676-L716
-Eigen::VectorXd polyfit(Eigen::VectorXd xvals, Eigen::VectorXd yvals,
-                        int order) {
-  assert(xvals.size() == yvals.size());
-  assert(order >= 1 && order <= xvals.size() - 1);
-  Eigen::MatrixXd A(xvals.size(), order + 1);
-
-  for (int i = 0; i < xvals.size(); i++) {
-    A(i, 0) = 1.0;
-  }
-
-  for (int j = 0; j < xvals.size(); j++) {
-    for (int i = 0; i < order; i++) {
-      A(j, i + 1) = A(j, i) * xvals(j);
-    }
-  }
-
-  auto Q = A.householderQr();
-  auto result = Q.solve(yvals);
-  return result;
-}
-*/
-
-void setNextVals(
-    vector<double> &next_x_vals, vector<double> &next_y_vals,
-    const vector<double> &previous_path_x, const vector<double> &previous_path_y,
-    const double &car_x, const double &car_y, const double &car_yaw,
-    const double &car_s, const double &car_d,
-    const vector<double> &map_waypoints_x, const vector<double> &map_waypoints_y,
-    const vector<double> &map_waypoints_s) {
-
-  vector<double> pts_x;
-  vector<double> pts_y;
-  int prev_path_size = previous_path_x.size();
-  double pos_x = car_x;
-  double pos_y = car_y;
-  double yaw = normalizeAngle(deg2rad(car_yaw));
-
-  if (prev_path_size < 2) {
-    double prev_pos_x = car_x - cos(car_yaw);
-    double prev_pos_y = car_y - sin(car_yaw);
-    pts_x.push_back(prev_pos_x);
-    pts_y.push_back(prev_pos_y);
-    pts_x.push_back(pos_x);
-    pts_y.push_back(pos_y);
-  } else {
-    pos_x = previous_path_x[prev_path_size - 1];
-    pos_y = previous_path_y[prev_path_size - 1];
-    double prev_pos_x = previous_path_x[prev_path_size - 2];
-    double prev_pos_y = previous_path_y[prev_path_size - 2];
-    yaw = normalizeAngle(atan2(pos_y - prev_pos_y, pos_x - prev_pos_x));
-    pts_x.push_back(prev_pos_x);
-    pts_y.push_back(prev_pos_y);
-    pts_x.push_back(pos_x);
-    pts_y.push_back(pos_y);
-  }
-
-  vector<double> pos_sd = getFrenet(pos_x, pos_y, yaw, map_waypoints_x, map_waypoints_y);
-  double pos_s = pos_sd[0];
-  double pos_d = pos_sd[1];
-
-  for (int i = 0; i < prev_path_size; i++)
-  {
-    next_x_vals.push_back(previous_path_x[i]);
-    next_y_vals.push_back(previous_path_y[i]);
-  }
-
-  // Path points
-  for (int i = 0; i < 3; i++) {
-    vector<double> wp = getXY(pos_s + (i+1) * 30.0, 6.0,
-                              map_waypoints_s, map_waypoints_x, map_waypoints_y);
-    pts_x.push_back(wp[0]);
-    pts_y.push_back(wp[1]);
-  }
-
-  for (int i = 0; i < pts_x.size(); i++) {
-    // Moving points to (0, 0) with angle 0
-    double shift_x = pts_x[i] - pos_x;
-    double shift_y = pts_y[i] - pos_y;
-    pts_x[i] = shift_x * cos(yaw) + shift_y * sin(yaw);
-    pts_y[i] = -shift_x * sin(yaw) + shift_y * cos(yaw);
-  }
-
-  tk::spline s;
-  s.set_points(pts_x, pts_y);
-
-  vector<double> target = getXY(pos_s + 30.0, 6.0, map_waypoints_s, map_waypoints_x, map_waypoints_y);
-  double target_dist = sqrt(pow(target[0] - pos_x, 2) + pow(target[1] - pos_y, 2));
-  double n_incs = target_dist / desired_velocity / move_time;
-  double inc = target_dist / n_incs;
-  double current = 0.0;
-  for (int i = 0; i < no_next_vals - prev_path_size; i++) {
-    current += inc;
-    double point_x = current;
-    double point_y = s(point_x);
-    // Moving points back to their position
-    next_x_vals.push_back(point_x * cos(yaw) - point_y * sin(yaw) + pos_x);
-    next_y_vals.push_back(point_x * sin(yaw) + point_y * cos(yaw) + pos_y);
-  }
-}
 
 int main() {
   uWS::Hub h;
+  PathPlanner path_planner(
+      MAX_SPEED_MPH, MOVE_TIME, MAX_ACCELERATION,
+      SECURITY_SECONDS_AHEAD, PLANNING_SECONDS_AHEAD, ACTION_SECONDS);
 
   // Load up map values for waypoint's x,y,s and d normalized normal vectors
   vector<double> map_waypoints_x;
@@ -330,8 +77,8 @@ int main() {
   	map_waypoints_dy.push_back(d_y);
   }
 
-  h.onMessage([&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
-                     uWS::OpCode opCode) {
+  h.onMessage([&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy,&path_planner]
+              (uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length, uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
     // The 4 signifies a websocket message
     // The 2 signifies a websocket event
@@ -369,18 +116,11 @@ int main() {
 
           	json msgJson;
 
-          	vector<double> next_x_vals;
-          	vector<double> next_y_vals;
-
             // TODO: define a path made up of (x,y) points that the car will visit sequentially every .02 seconds
-            setNextVals(next_x_vals, next_y_vals,
-                previous_path_x, previous_path_y,
-                car_x, car_y, car_yaw,
-                car_s, car_d,
-                map_waypoints_x, map_waypoints_y, map_waypoints_s);
+            vector<vector<double>> next_vals = path_planner.updatePath(j[1], map_waypoints_x, map_waypoints_y, map_waypoints_s);
 
-          	msgJson["next_x"] = next_x_vals;
-          	msgJson["next_y"] = next_y_vals;
+          	msgJson["next_x"] = next_vals[0];
+          	msgJson["next_y"] = next_vals[1];
 
           	auto msg = "42[\"control\","+ msgJson.dump()+"]";
 
