@@ -17,14 +17,40 @@ double Tools::normalizeAngle(const double &x) {
   return n_x;
 }
 
-double Tools::distance(const double &x1, const double &y1, const double &x2, const double &y2)
-{
+void Tools::translate(double &x, double &y, const double trans_x, const double trans_y) {
+  x -= trans_x;
+  y -= trans_y;
+}
+
+void Tools::rotate(double &x, double &y, const double angle) {
+  const double original_x = x;
+  const double original_y = y;
+  x = original_x * cos(angle) + original_y * sin(angle);
+  y = -original_x * sin(angle) + original_y * cos(angle);
+}
+
+void Tools::translateAndRotate(double &x, double &y,
+                               const double trans_x, const double trans_y, const double angle) {
+  translate(x, y, trans_x, trans_y);
+  rotate(x, y, angle);
+}
+
+void Tools::rotateAndTranslate(double &x, double &y,
+                               const double angle, const double trans_x, const double trans_y) {
+  rotate(x, y, angle);
+  translate(x, y, trans_x, trans_y);
+}
+
+double Tools::mph2ms(const double &x) {
+  return (x * 1609.34) / (60.0 * 60.0);
+}
+
+double Tools::distance(const double &x1, const double &y1, const double &x2, const double &y2) {
 	return sqrt( (x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1));
 }
 
 int Tools::ClosestWaypoint(const double &x, const double &y,
-                           const vector<double> &maps_x, const vector<double> &maps_y)
-{
+                           const vector<double> &maps_x, const vector<double> &maps_y) {
   double closestLen = 100000; //large number
   int closestWaypoint = 0;
 
@@ -44,8 +70,7 @@ int Tools::ClosestWaypoint(const double &x, const double &y,
 }
 
 int Tools::NextWaypoint(const double &x, const double &y, const double &theta,
-                        const vector<double> &maps_x, const vector<double> &maps_y)
-{
+                        const vector<double> &maps_x, const vector<double> &maps_y) {
   int closestWaypoint = ClosestWaypoint(x,y,maps_x,maps_y);
 
   double map_x = maps_x[closestWaypoint];
@@ -70,8 +95,7 @@ int Tools::NextWaypoint(const double &x, const double &y, const double &theta,
 
 // Transform from Cartesian x,y coordinates to Frenet s,d coordinates
 vector<double> Tools::getFrenet(const double &x, const double &y, const double &theta,
-                                const vector<double> &maps_x, const vector<double> &maps_y)
-{
+                                const vector<double> &maps_x, const vector<double> &maps_y) {
   int next_wp = NextWaypoint(x,y, theta, maps_x,maps_y);
 
   int prev_wp;
@@ -120,8 +144,7 @@ vector<double> Tools::getFrenet(const double &x, const double &y, const double &
 // Transform from Frenet s,d coordinates to Cartesian x,y
 vector<double> Tools::getXY(const double &s, const double &d,
                             const vector<double> &maps_s,
-                            const vector<double> &maps_x, const vector<double> &maps_y)
-{
+                            const vector<double> &maps_x, const vector<double> &maps_y) {
   int prev_wp = -1;
 
   while(s > maps_s[prev_wp+1] && (prev_wp < (int)(maps_s.size()-1) ))

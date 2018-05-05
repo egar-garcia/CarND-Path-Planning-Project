@@ -17,6 +17,15 @@ class Tools {
 
     double normalizeAngle(const double &x);
 
+    void translate(double &x, double &y, const double trans_x, const double trans_y);
+    void rotate(double &x, double &y, const double angle);
+    void translateAndRotate(double &x, double &y,
+                            const double trans_x, const double trans_y, const double angle);
+    void rotateAndTranslate(double &x, double &y,
+                            const double angle, const double trans_x, const double trans_y);
+
+    double mph2ms(const double &x);
+
     double distance(const double &x1, const double &y1, const double &x2, const double &y2);
 
     // Transform from Cartesian x,y coordinates to Frenet s,d coordinates
