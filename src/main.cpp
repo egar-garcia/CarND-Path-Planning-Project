@@ -16,9 +16,9 @@ using json = nlohmann::json;
 
 const double MAX_SPEED_MPH = 50.0; // Max 50 mph
 const double MOVE_TIME = 20.0 / 1000.0; // Update each 0.02 seconds
-const double MAX_ACCELERATION = 5.0; // Acceletion in m/s^2 - max is 10 m/s^2
+const double MAX_ACCELERATION = 10.0; // Acceletion in m/s^2 - max is 10 m/s^2
 const double SECURITY_SECONDS_AHEAD = 2.0; //3.0;
-const double PLANNING_SECONDS_AHEAD = 1.0; //1.5;
+const double PLANNING_SECONDS_AHEAD = 2.0; //1.5;
 const double ACTION_SECONDS = 2.0;
 
 // Checks if the SocketIO event has JSON data.

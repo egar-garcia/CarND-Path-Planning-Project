@@ -22,6 +22,7 @@ PathPlanner::PathPlanner(
   this -> planning_seconds_ahead = planning_seconds_ahead;
   this -> action_seconds = action_seconds;
   this -> ideal_speed = ((max_speed_mph - 1) * 1609.34) / (60.0 * 60.0);
+  this -> ideal_acceleration = max_acceleration / 2.0;
   this -> no_next_vals = round(planning_seconds_ahead / move_time);
 
   this -> lane = 1;
@@ -49,12 +50,12 @@ vector<vector<double>> PathPlanner::updatePath(
   vector<double> next_y_vals;
   vector<double> pts_x;
   vector<double> pts_y;
-  int prev_path_size = previous_path_x.size();
   double pos_x = car_x;
   double pos_y = car_y;
   double yaw = tools.normalizeAngle(tools.deg2rad(car_yaw));
   double speed = car_speed;
 
+  int prev_path_size = previous_path_x.size();
   if (prev_path_size < 2) {
     double prev_pos_x = car_x - cos(car_yaw);
     double prev_pos_y = car_y - sin(car_yaw);
@@ -79,23 +80,40 @@ vector<vector<double>> PathPlanner::updatePath(
   double pos_s = pos_sd[0];
   double pos_d = pos_sd[1];
 
+  ScanStatus scan_status = scanSurroundings(car_s, car_speed,
+                                            prev_path_size * move_time, pos_s, speed,
+                                            sensor_fusion);
+  cout << "--> " << "LANE: " << lane
+       << ", carInFrontIsTooClose: " << scan_status.carInFrontIsTooClose
+       << ", carInFrontIsDangerouslyClose: " << scan_status.carInFrontIsDangerouslyClose
+       << ", gapAtLeftLane: " << scan_status.gapAtLeftLane
+       << ", gapAtRightLane: " << scan_status.gapAtRightLane
+       << endl;
+
+  State state = nextState(scan_status);
+  /*if (state == STOP) {
+    cout << "*** EMERGENCY STOP" << endl;
+    pos_x = car_x;
+    pos_y = car_y;
+    yaw = tools.normalizeAngle(tools.deg2rad(car_yaw));
+    speed = car_speed;
+    if (prev_path_size > 0) {
+      double next_pos_x = previous_path_x[0];
+      double next_pos_y = previous_path_y[0];
+      yaw = tools.normalizeAngle(atan2(next_pos_y - pos_y, next_pos_x - pos_x));
+      speed = tools.distance(pos_x, pos_y, next_pos_x, next_pos_y) / move_time;
+    }
+    prev_path_size = 0;
+  } else*/
+  if (state == CHANGE_TO_LEFT_LANE) {
+    lane--;
+  } else if (state == CHANGE_TO_RIGHT_LANE) {
+    lane++;
+  }
+
   for (int i = 0; i < prev_path_size; i++) {
     next_x_vals.push_back(previous_path_x[i]);
     next_y_vals.push_back(previous_path_y[i]);
-  }
-
-  ScanStatus status = scanSurroundings(prev_path_size * move_time, pos_s, speed, sensor_fusion);
-  cout << "--> " << "LANE: " << lane
-       << ", carInFrontIsTooClose: " << status.carInFrontIsTooClose
-       << ", gapAtLeftLane: " << status.gapAtLeftLane
-       << ", gapAtRightLane: " << status.gapAtRightLane
-       << endl;
-
-  PathPlannerAction action = decideAction(status);
-  if (action == CHANGE_TO_LEFT_LANE) {
-    lane--;
-  } else if (action == CHANGE_TO_RIGHT_LANE) {
-    lane++;
   }
 
   // Path points
@@ -120,12 +138,15 @@ vector<vector<double>> PathPlanner::updatePath(
 
   double current = 0.0;
   for (int i = 0; i < no_next_vals - prev_path_size; i++) {
-    if (action == REDUCE_SPEED) {
-      speed = max(speed - max_acceleration * move_time, 0.0);
+    /*if (state == STOP) {
+      speed = max(speed - ideal_acceleration * move_time, 0.0);
+    } else*/
+    if (state == REDUCE_SPEED) {
+      speed = max(speed - ideal_acceleration * move_time, 0.0);
     } else if (speed < ideal_speed) {
-      speed = min(speed + max_acceleration * move_time, ideal_speed);
+      speed = min(speed + ideal_acceleration * move_time, ideal_speed);
     } else if (speed > ideal_speed) {
-      speed = max(speed - max_acceleration * move_time, ideal_speed);
+      speed = max(speed - ideal_acceleration * move_time, ideal_speed);
     }
     current += speed * move_time;
     //current += ideal_speed * move_time;
@@ -140,13 +161,15 @@ vector<vector<double>> PathPlanner::updatePath(
 }
 
 ScanStatus PathPlanner::scanSurroundings(
-    const int &time_head, const double &future_pos_s, const double &future_speed,
+    const double &current_pos_s, const double &current_speed,
+    const double &time_in_future, const double &future_pos_s, const double &future_speed,
     const vector<vector<double>> &sensor_fusion) {
 
-  ScanStatus status;
-  status.carInFrontIsTooClose = false;
-  status.gapAtLeftLane = true;
-  status.gapAtRightLane = true;
+  ScanStatus scan_status;
+  scan_status.carInFrontIsTooClose = false;
+  scan_status.carInFrontIsDangerouslyClose = false;
+  scan_status.gapAtLeftLane = true;
+  scan_status.gapAtRightLane = true;
 
   for (int i = 0; i < sensor_fusion.size(); i++) {
     double checked_car_vx = sensor_fusion[i][3];
@@ -155,51 +178,67 @@ ScanStatus PathPlanner::scanSurroundings(
     double checked_car_s = sensor_fusion[i][5];
     double checked_car_d = sensor_fusion[i][6];
 
+    /*
+    if (isCarInLane(checked_car_d, lane) &&
+        checked_car_s >= current_pos_s &&
+        checked_car_s <= current_pos_s + current_speed * security_seconds_ahead / 2.0) {
+      scan_status.carInFrontIsDangerouslyClose = true;
+    }
+    */
+
+    checked_car_s += checked_car_speed * time_in_future;
+
     if (isCarInLane(checked_car_d, lane) && isCarToClose(future_pos_s, future_speed, checked_car_s)) {
-      status.carInFrontIsTooClose = true;
+      scan_status.carInFrontIsTooClose = true;
     }
 
     if (lane > 0) {
       if (isCarInLane(checked_car_d, lane - 1) &&
           (isCarToClose(future_pos_s, future_speed, checked_car_s) ||
            isCarToClose(checked_car_s, checked_car_speed, future_pos_s))) {
-        status.gapAtLeftLane = false;
+        scan_status.gapAtLeftLane = false;
       }
     } else {
-      status.gapAtLeftLane = false;
+      scan_status.gapAtLeftLane = false;
     }
 
     if (lane < 2) {
       if (isCarInLane(checked_car_d, lane + 1) &&
           (isCarToClose(future_pos_s, future_speed, checked_car_s) ||
            isCarToClose(checked_car_s, checked_car_speed, future_pos_s))) {
-        status.gapAtRightLane = false;
+        scan_status.gapAtRightLane = false;
       }
     } else {
-      status.gapAtRightLane = false;
+      scan_status.gapAtRightLane = false;
     }
   }
 
-  return status;
+  return scan_status;
 }
 
-PathPlannerAction PathPlanner::decideAction(const ScanStatus &status) {
-  if (status.carInFrontIsTooClose) {
-    if (status.gapAtLeftLane) {
-      return CHANGE_TO_LEFT_LANE;
-    } else if (status.gapAtRightLane) {
-      return CHANGE_TO_RIGHT_LANE;
-    } else {
-      return REDUCE_SPEED;
-    }
-  } else {
-    if (lane < PREFERRED_LANE && status.gapAtRightLane) {
-      return CHANGE_TO_RIGHT_LANE;
-    } else if (lane > PREFERRED_LANE && status.gapAtLeftLane) {
-      return CHANGE_TO_LEFT_LANE;
-    }
+State PathPlanner::nextState(const ScanStatus &scan_status) {
+  if (scan_status.carInFrontIsDangerouslyClose) {
+    return STOP;
   }
-  return KEEP_GOING;
+
+  if (scan_status.carInFrontIsTooClose) {
+    if (scan_status.gapAtLeftLane) {
+      return CHANGE_TO_LEFT_LANE;
+    }
+    if (scan_status.gapAtRightLane) {
+      return CHANGE_TO_RIGHT_LANE;
+    }
+    return REDUCE_SPEED;
+  }
+
+  if (lane < PREFERRED_LANE && scan_status.gapAtRightLane) {
+    return CHANGE_TO_RIGHT_LANE;
+  }
+  if (lane > PREFERRED_LANE && scan_status.gapAtLeftLane) {
+    return CHANGE_TO_LEFT_LANE;
+  }
+
+  return ADVANCE;
 }
 
 bool PathPlanner::isCarInLane(const double &car_d, const int &lane) {

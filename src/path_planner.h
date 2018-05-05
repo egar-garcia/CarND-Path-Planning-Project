@@ -7,11 +7,12 @@
 
 struct ScanStatus {
     bool carInFrontIsTooClose;
+    bool carInFrontIsDangerouslyClose;
     bool gapAtLeftLane;
     bool gapAtRightLane;
 };
 
-enum PathPlannerAction { KEEP_GOING, REDUCE_SPEED, CHANGE_TO_LEFT_LANE, CHANGE_TO_RIGHT_LANE };
+enum State { ADVANCE, REDUCE_SPEED, CHANGE_TO_LEFT_LANE, CHANGE_TO_RIGHT_LANE, STOP };
 
 class PathPlanner {
 
@@ -48,13 +49,15 @@ class PathPlanner {
     double lane;
 
     double ideal_speed; // Desired speed in m/s
+    double ideal_acceleration;
     int no_next_vals;
 
     ScanStatus scanSurroundings(
-        const int &time_head, const double &future_pos_s, const double &future_speed,
+        const double &current_pos_s, const double &current_speed,
+        const double &time_in_future, const double &future_pos_s, const double &future_speed,
         const std::vector<std::vector<double>> &sensor_fusion);
 
-    PathPlannerAction decideAction(const ScanStatus &status);
+    State nextState(const ScanStatus &scan_status);
 
     bool isCarInLane(const double &car_d, const int &lane);
 
