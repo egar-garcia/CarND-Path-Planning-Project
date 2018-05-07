@@ -19,6 +19,7 @@ const double MOVE_TIME = 20.0 / 1000.0; // Update each 0.02 seconds
 const double MAX_ACCELERATION = 10.0; // Acceletion in m/s^2 - max is 10 m/s^2
 const double SECURITY_SECONDS_AHEAD = 2.0; //3.0;
 const double PLANNING_SECONDS_AHEAD = 2.0; //1.5;
+const double TAKEOVER_AGRESSIVITY_RATE = 0.7;
 const double ACTION_SECONDS = 2.0;
 
 // Checks if the SocketIO event has JSON data.
@@ -41,7 +42,8 @@ int main() {
   uWS::Hub h;
   PathPlanner path_planner(
       MAX_SPEED_MPH, MOVE_TIME, MAX_ACCELERATION,
-      SECURITY_SECONDS_AHEAD, PLANNING_SECONDS_AHEAD, ACTION_SECONDS);
+      SECURITY_SECONDS_AHEAD, PLANNING_SECONDS_AHEAD, TAKEOVER_AGRESSIVITY_RATE,
+      ACTION_SECONDS);
 
   // Load up map values for waypoint's x,y,s and d normalized normal vectors
   vector<double> map_waypoints_x;

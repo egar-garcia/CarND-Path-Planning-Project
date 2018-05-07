@@ -17,12 +17,12 @@ class Tools {
 
     double normalizeAngle(const double &x);
 
-    void translate(double &x, double &y, const double trans_x, const double trans_y);
-    void rotate(double &x, double &y, const double angle);
+    void translate(double &x, double &y, const double &trans_x, const double &trans_y);
+    void rotate(double &x, double &y, const double &angle);
     void translateAndRotate(double &x, double &y,
-                            const double trans_x, const double trans_y, const double angle);
+                            const double &trans_x, const double &trans_y, const double &angle);
     void rotateAndTranslate(double &x, double &y,
-                            const double angle, const double trans_x, const double trans_y);
+                            const double &angle, const double &trans_x, const double &trans_y);
 
     double mph2ms(const double &x);
 

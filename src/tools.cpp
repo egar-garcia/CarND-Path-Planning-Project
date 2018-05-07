@@ -17,12 +17,12 @@ double Tools::normalizeAngle(const double &x) {
   return n_x;
 }
 
-void Tools::translate(double &x, double &y, const double trans_x, const double trans_y) {
+void Tools::translate(double &x, double &y, const double &trans_x, const double &trans_y) {
   x -= trans_x;
   y -= trans_y;
 }
 
-void Tools::rotate(double &x, double &y, const double angle) {
+void Tools::rotate(double &x, double &y, const double &angle) {
   const double original_x = x;
   const double original_y = y;
   x = original_x * cos(angle) + original_y * sin(angle);
@@ -30,13 +30,13 @@ void Tools::rotate(double &x, double &y, const double angle) {
 }
 
 void Tools::translateAndRotate(double &x, double &y,
-                               const double trans_x, const double trans_y, const double angle) {
+                               const double &trans_x, const double &trans_y, const double &angle) {
   translate(x, y, trans_x, trans_y);
   rotate(x, y, angle);
 }
 
 void Tools::rotateAndTranslate(double &x, double &y,
-                               const double angle, const double trans_x, const double trans_y) {
+                               const double &angle, const double &trans_x, const double &trans_y) {
   rotate(x, y, angle);
   translate(x, y, trans_x, trans_y);
 }
