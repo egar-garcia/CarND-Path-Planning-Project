@@ -60,7 +60,8 @@ vector<vector<double>> PathPlanner::updatePath(
        << ", carAheadAtRightLane: " << (scan_status.carAheadAtRightLane != NULL ? scan_status.carAheadAtRightLane->at(SENSOR_FUSION_S_IDX) : -99999.999)
        << endl;
 
-  const State state = getNextState(scan_status);
+  //const State state = getNextState(scan_status);
+  const State state = pickBestState(getNextStates(scan_status), scan_status);
 
   if (state == CHANGE_TO_LEFT_LANE) {
     lane--;
@@ -306,6 +307,56 @@ State PathPlanner::getNextState(const ScanStatus &scan_status) {
   }
 
   return ADVANCE;
+}
+
+vector<State> PathPlanner::getNextStates(const ScanStatus &scan_status) {
+  vector<State> next_states;
+
+  if (!scan_status.carInFrontIsTooClose) {
+    next_states.push_back(ADVANCE);
+  } else {
+    next_states.push_back(REDUCE_SPEED);
+  }
+  if (scan_status.gapAtLeftLane) {
+    next_states.push_back(CHANGE_TO_LEFT_LANE);
+  }
+  if (scan_status.gapAtRightLane) {
+    next_states.push_back(CHANGE_TO_RIGHT_LANE);
+  }
+
+  return next_states;
+}
+
+double PathPlanner::calculateWeight(const State &state, const ScanStatus &scan_status) {
+  vector<double> *car_in_front = scan_status.carAheadInFront;
+  if (state == CHANGE_TO_LEFT_LANE) {
+    car_in_front = scan_status.carAheadAtLeftLane;
+  } else if (state == CHANGE_TO_RIGHT_LANE) {
+    car_in_front = scan_status.carAheadAtRightLane;
+  }
+
+  if (car_in_front == NULL) {
+    return ideal_speed;
+  } else {
+    const double vx = car_in_front -> at(SENSOR_FUSION_VX_IDX);
+    const double vy = car_in_front -> at(SENSOR_FUSION_VY_IDX);
+    return sqrt(vx * vx + vy + vy);
+  }
+}
+
+State PathPlanner::pickBestState(const vector<State> next_states, const ScanStatus &scan_status) {
+  const int no_states = next_states.size();
+  State best_state = next_states[0];
+  double best_weight = calculateWeight(best_state, scan_status);
+  for (int i = 1; i < no_states; i++) {
+    const State state = next_states[i];
+    const double weight = calculateWeight(state, scan_status);
+    if (weight > best_weight) {
+      best_weight = weight;
+      best_state = state;
+    }
+  }
+  return best_state;
 }
 
 double PathPlanner::adjustSpeed(const double &speed, const State &state) {

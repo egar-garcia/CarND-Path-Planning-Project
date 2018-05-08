@@ -130,6 +130,17 @@ class PathPlanner {
     State getNextState(
         const ScanStatus &scan_status);
 
+    std::vector<State> getNextStates(
+        const ScanStatus &scan_status);
+
+    State pickBestState(
+        const std::vector<State> next_states,
+        const ScanStatus &scan_status);
+
+    double calculateWeight(
+        const State &state,
+        const ScanStatus &scan_status);
+
     double adjustSpeed(
         const double &speed,
         const State &state);
