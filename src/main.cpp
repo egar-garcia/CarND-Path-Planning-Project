@@ -17,10 +17,10 @@ using json = nlohmann::json;
 const double MAX_SPEED_MPH = 50.0; // Max 50 mph
 const double MOVE_TIME = 20.0 / 1000.0; // Update each 0.02 seconds
 const double MAX_ACCELERATION = 10.0; // Acceletion in m/s^2 - max is 10 m/s^2
-const double SECURITY_SECONDS_AHEAD = 2.0; //3.0;
-const double PLANNING_SECONDS_AHEAD = 2.0; //1.5;
-const double ACTION_SECONDS = 2.0;
-const double TAKEOVER_AGRESSIVITY_RATE = 0.25;
+const double SECURITY_SECONDS_AHEAD = 2.0; // Idealy 3 in real life, but used 2 to be more dynamic
+const double PLANNING_SECONDS_AHEAD = 2.0; // Same as the security distance ahead
+const double ACTION_SECONDS = 2.0; // 2 secods to complete a lane change
+const double TAKEOVER_AGRESSIVITY_RATE = 0.25; // A conservative rate to takeover car behind
 const double SECURITY_REACTION_RATE = 0.75;
 
 // Checks if the SocketIO event has JSON data.
@@ -96,38 +96,20 @@ int main() {
         string event = j[0].get<string>();
 
         if (event == "telemetry") {
-          // j[1] is the data JSON object
+          // j[1] is the data JSON object containing the main car's localization Data
+          // Defining a path made up of (x,y) points that the car will visit sequentially
+          // every .02 seconds
+          vector<vector<double>> next_vals
+              = path_planner.updatePath(j[1], map_waypoints_x, map_waypoints_y, map_waypoints_s);
 
-        	// Main car's localization Data
-          	double car_x = j[1]["x"];
-          	double car_y = j[1]["y"];
-          	double car_s = j[1]["s"];
-          	double car_d = j[1]["d"];
-          	double car_yaw = j[1]["yaw"];
-          	double car_speed = j[1]["speed"];
+          json msgJson;
+          msgJson["next_x"] = next_vals[0];
+          msgJson["next_y"] = next_vals[1];
 
-          	// Previous path data given to the Planner
-          	auto previous_path_x = j[1]["previous_path_x"];
-          	auto previous_path_y = j[1]["previous_path_y"];
-          	// Previous path's end s and d values
-          	double end_path_s = j[1]["end_path_s"];
-          	double end_path_d = j[1]["end_path_d"];
+          auto msg = "42[\"control\","+ msgJson.dump()+"]";
 
-          	// Sensor Fusion Data, a list of all other cars on the same side of the road.
-          	auto sensor_fusion = j[1]["sensor_fusion"];
-
-          	json msgJson;
-
-            // TODO: define a path made up of (x,y) points that the car will visit sequentially every .02 seconds
-            vector<vector<double>> next_vals = path_planner.updatePath(j[1], map_waypoints_x, map_waypoints_y, map_waypoints_s);
-
-          	msgJson["next_x"] = next_vals[0];
-          	msgJson["next_y"] = next_vals[1];
-
-          	auto msg = "42[\"control\","+ msgJson.dump()+"]";
-
-          	//this_thread::sleep_for(chrono::milliseconds(1000));
-          	ws.send(msg.data(), msg.length(), uWS::OpCode::TEXT);
+          //this_thread::sleep_for(chrono::milliseconds(1000));
+          ws.send(msg.data(), msg.length(), uWS::OpCode::TEXT);
 
         }
       } else {

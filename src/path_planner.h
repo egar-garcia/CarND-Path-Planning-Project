@@ -43,18 +43,19 @@ class PathPlanner {
 
     /**
       * @param max_speed_mph              Maximum speed in MPH.
-      * @param move_time                  Time in seconds to do a move, p.e. a lane change.
+      * @param move_time                  Time in seconds to record a move by the car.
+      *                                   P.e. 20 milliseconds given by the simulator.
       * @param max_acceleration           Maximum max_acceleration in m/s^2.
       * @param security_seconds_ahead     Seconds ahead to keep distance from the car in front.
       * @param planning_seconds_ahead     Seconds ahead to generate the path.
       * @param action_seconds             Time in seconds of the duration of an action,
       *                                   p.e. a lane change.
-      * @param takeover_agressivity_rate  Rate [0,1] of how close in front the car can be of the
+      * @param takeover_agressivity_rate  Rate of how close in front the car can be of the
       *                                   side cars in terms of the safety distance (in seconds).
       *                                   The colser to 0 the more conservative.
       *                                   0 needs all the distance, 1 no distance.
-      * @param security_reaction_rate     Rate [0,1] of the proportion of the safety distance
-      *                                   necessary to start braking when a car in front is close.
+      * @param security_reaction_rate     Proportion of the safety distance necessary to start
+      *                                   breaking when a car in front is close.
       */
     PathPlanner(
       const double &max_speed_mph,
@@ -77,7 +78,6 @@ class PathPlanner {
     const double MIN_ACTION_METERS = 10.0;
     const int FIRST_LANE = 0;
     const int LAST_LANE = 2;
-    const int PREFERRED_LANE = 1;
 
     const int X_IDX = 0;
     const int Y_IDX = 1;
@@ -102,15 +102,15 @@ class PathPlanner {
     double security_seconds_ahead;
     double planning_seconds_ahead;
     double action_seconds;
-    double takeover_agressivity_rate; // 0.0 to 1.0
+    double takeover_agressivity_rate;
     double security_reaction_rate; // 0.0 to 1.0
 
-    double ideal_speed; // Desired speed in m/s
-    double ideal_acceleration;
-    int no_next_vals;
+    double ideal_speed; // Desired speed in m/s, less but close to the max speed
+    double ideal_acceleration; // Ideal accelation, less than the maximum accelation
+    int no_next_vals; // Number of next values in the path (path's length in seconds / move time)
 
     bool isInitialized;
-    double lane;
+    double lane; // Current lane
 
     void initialize();
 
@@ -157,11 +157,6 @@ class PathPlanner {
         const double &time_in_future,
         const std::vector<double> &future_pos,
         std::vector<std::vector<double>> &sensor_fusion);
-
-    /*
-    State getNextState(
-        const ScanStatus &scan_status);
-    */
 
     std::vector<State> getNextStates(
         const ScanStatus &scan_status);

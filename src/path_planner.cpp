@@ -280,29 +280,6 @@ ScanStatus PathPlanner::scanSurroundings(
   return scan_status;
 }
 
-/*
-State PathPlanner::getNextState(const ScanStatus &scan_status) {
-  if (scan_status.carInFrontIsTooClose) {
-    if (scan_status.gapAtLeftLane) {
-      return CHANGE_TO_LEFT_LANE;
-    }
-    if (scan_status.gapAtRightLane) {
-      return CHANGE_TO_RIGHT_LANE;
-    }
-    return REDUCE_SPEED;
-  }
-
-  if (lane < PREFERRED_LANE && scan_status.gapAtRightLane) {
-    return CHANGE_TO_RIGHT_LANE;
-  }
-  if (lane > PREFERRED_LANE && scan_status.gapAtLeftLane) {
-    return CHANGE_TO_LEFT_LANE;
-  }
-
-  return ADVANCE;
-}
-*/
-
 vector<State> PathPlanner::getNextStates(const ScanStatus &scan_status) {
   vector<State> next_states;
 
