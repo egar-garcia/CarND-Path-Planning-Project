@@ -5,6 +5,11 @@
 #include "json.hpp"
 #include "tools.h"
 
+/**
+ * Information as a result of scanning the car surroundings. Indicates if a car of lower speed
+ * is detected in front, if there are gaps in the left and right lanes to make a safe lane change
+ * and idetifies the cars in fron in the current, left and right lines.
+ */
 struct ScanStatus {
     bool carInFrontIsTooClose;
     bool gapAtLeftLane;
@@ -14,6 +19,14 @@ struct ScanStatus {
     std::vector<double> *carAheadAtRightLane;
 };
 
+/**
+ * The states to model the car's behavior. Four states are used:
+ * ADVANCE: Means the car keeps in the same lane accelating till reach the ideal speed (which is
+ *          close to the max speed).
+ * REDUCE_SPEED: Keeps in the same lane but reducing the speed.
+ * CHANGE_TO_LEFT_LANE: Performs a change to the next lane in the left.
+ * CHANGE_TO_RIGHT_LANE: Performs a change to the next lane in the right.
+ */
 enum State {
   ADVANCE,
   REDUCE_SPEED,
@@ -21,10 +34,28 @@ enum State {
   CHANGE_TO_RIGHT_LANE
 };
 
+/**
+ * Controls the car behavior and generates the motion path.
+ */
 class PathPlanner {
 
   public:
 
+    /**
+      * @param max_speed_mph              Maximum speed in MPH.
+      * @param move_time                  Time in seconds to do a move, p.e. a lane change.
+      * @param max_acceleration           Maximum max_acceleration in m/s^2.
+      * @param security_seconds_ahead     Seconds ahead to keep distance from the car in front.
+      * @param planning_seconds_ahead     Seconds ahead to generate the path.
+      * @param action_seconds             Time in seconds of the duration of an action,
+      *                                   p.e. a lane change.
+      * @param takeover_agressivity_rate  Rate [0,1] of how close in front the car can be of the
+      *                                   side cars in terms of the safety distance (in seconds).
+      *                                   The colser to 0 the more conservative.
+      *                                   0 needs all the distance, 1 no distance.
+      * @param security_reaction_rate     Rate [0,1] of the proportion of the safety distance
+      *                                   necessary to start braking when a car in front is close.
+      */
     PathPlanner(
       const double &max_speed_mph,
       const double &move_time,
