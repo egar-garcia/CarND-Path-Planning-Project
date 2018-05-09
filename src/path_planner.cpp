@@ -51,14 +51,6 @@ vector<vector<double>> PathPlanner::updatePath(
   vector<vector<double>> sensor_fusion = car_data["sensor_fusion"];
   const ScanStatus scan_status = scanSurroundings(current_pos, prev_path_size * move_time,
                                                   planned_pos, sensor_fusion);
-  cout << "--> " << "LANE: " << lane
-       << ", carInFrontIsTooClose: " << scan_status.carInFrontIsTooClose
-       << ", gapAtLeftLane: " << scan_status.gapAtLeftLane
-       << ", gapAtRightLane: " << scan_status.gapAtRightLane
-       << ", carAheadAtLeftLane: " << (scan_status.carAheadAtLeftLane != NULL ? scan_status.carAheadAtLeftLane->at(SENSOR_FUSION_S_IDX) : -99999.999)
-       << ", carAheadInFront: " << (scan_status.carAheadInFront != NULL ? scan_status.carAheadInFront->at(SENSOR_FUSION_S_IDX) : -99999.999)
-       << ", carAheadAtRightLane: " << (scan_status.carAheadAtRightLane != NULL ? scan_status.carAheadAtRightLane->at(SENSOR_FUSION_S_IDX) : -99999.999)
-       << endl;
 
   //const State state = getNextState(scan_status);
   const State state = pickBestState(getNextStates(scan_status), scan_status);
@@ -288,6 +280,7 @@ ScanStatus PathPlanner::scanSurroundings(
   return scan_status;
 }
 
+/*
 State PathPlanner::getNextState(const ScanStatus &scan_status) {
   if (scan_status.carInFrontIsTooClose) {
     if (scan_status.gapAtLeftLane) {
@@ -308,6 +301,7 @@ State PathPlanner::getNextState(const ScanStatus &scan_status) {
 
   return ADVANCE;
 }
+*/
 
 vector<State> PathPlanner::getNextStates(const ScanStatus &scan_status) {
   vector<State> next_states;
@@ -327,32 +321,43 @@ vector<State> PathPlanner::getNextStates(const ScanStatus &scan_status) {
   return next_states;
 }
 
-double PathPlanner::calculateWeight(const State &state, const ScanStatus &scan_status) {
+double PathPlanner::calculateCost(const State &state, const ScanStatus &scan_status) {
+
+  bool lane_change = false;
   vector<double> *car_in_front = scan_status.carAheadInFront;
   if (state == CHANGE_TO_LEFT_LANE) {
     car_in_front = scan_status.carAheadAtLeftLane;
+    lane_change = true;
   } else if (state == CHANGE_TO_RIGHT_LANE) {
     car_in_front = scan_status.carAheadAtRightLane;
+    lane_change = true;
   }
 
   if (car_in_front == NULL) {
-    return ideal_speed;
-  } else {
-    const double vx = car_in_front -> at(SENSOR_FUSION_VX_IDX);
-    const double vy = car_in_front -> at(SENSOR_FUSION_VY_IDX);
-    return sqrt(vx * vx + vy + vy);
+    if (lane_change) {
+      return exp(-ideal_speed);
+    }
+    return 0.0;
   }
+
+  const double car_in_front_speed
+      = min(sqrt(pow(car_in_front -> at(SENSOR_FUSION_VX_IDX), 2) +
+                 pow(car_in_front -> at(SENSOR_FUSION_VY_IDX), 2)),
+            ideal_speed);
+  return exp(-car_in_front_speed);
 }
 
 State PathPlanner::pickBestState(const vector<State> next_states, const ScanStatus &scan_status) {
   const int no_states = next_states.size();
+
   State best_state = next_states[0];
-  double best_weight = calculateWeight(best_state, scan_status);
+  double best_cost = calculateCost(best_state, scan_status);
+
   for (int i = 1; i < no_states; i++) {
     const State state = next_states[i];
-    const double weight = calculateWeight(state, scan_status);
-    if (weight > best_weight) {
-      best_weight = weight;
+    const double cost = calculateCost(state, scan_status);
+    if (cost < best_cost) {
+      best_cost = cost;
       best_state = state;
     }
   }

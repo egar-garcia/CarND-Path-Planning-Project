@@ -127,18 +127,20 @@ class PathPlanner {
         const std::vector<double> &future_pos,
         std::vector<std::vector<double>> &sensor_fusion);
 
+    /*
     State getNextState(
         const ScanStatus &scan_status);
+    */
 
     std::vector<State> getNextStates(
         const ScanStatus &scan_status);
 
-    State pickBestState(
-        const std::vector<State> next_states,
+    double calculateCost(
+        const State &state,
         const ScanStatus &scan_status);
 
-    double calculateWeight(
-        const State &state,
+    State pickBestState(
+        const std::vector<State> next_states,
         const ScanStatus &scan_status);
 
     double adjustSpeed(
