@@ -12,7 +12,8 @@ PathPlanner::PathPlanner(
     const double &max_speed_mph, const double &move_time, const double &max_acceleration,
     const double &security_seconds_ahead, const double &planning_seconds_ahead,
     const double &action_seconds, const double &takeover_agressivity_rate,
-    const double &security_reaction_rate) {
+    const double &min_time_between_lane_changes, const double &security_reaction_rate,
+    const double &max_visibily_seconds_ahead) {
   this -> max_speed_mph = max_speed_mph;
   this -> move_time = move_time;
   this -> max_acceleration = max_acceleration;
@@ -20,10 +21,14 @@ PathPlanner::PathPlanner(
   this -> planning_seconds_ahead = planning_seconds_ahead;
   this -> action_seconds = action_seconds;
   this -> takeover_agressivity_rate = takeover_agressivity_rate;
+  this -> min_time_between_lane_changes = min_time_between_lane_changes;
   this -> security_reaction_rate = security_reaction_rate;
+  this -> max_visibily_seconds_ahead = max_visibily_seconds_ahead;
   this -> ideal_speed = tools.mph2ms(max_speed_mph - 1);
   this -> ideal_acceleration = max_acceleration / 2.0;
   this -> no_next_vals = round(planning_seconds_ahead / move_time);
+  this -> time_reference = 0.0;
+  this -> time_of_last_lane_change = -2.0 * min_time_between_lane_changes - action_seconds;
 
   this -> isInitialized = false;
 }
@@ -37,30 +42,39 @@ vector<vector<double>> PathPlanner::updatePath(
     initialize();
   }
 
+  // Current's car position
   const vector<double> current_pos = getCurrentPosition(car_data);
 
-  // Previous path data given to the Planner
+  // Previous path data
   vector<double> previous_path_x = car_data["previous_path_x"];
   vector<double> previous_path_y = car_data["previous_path_y"];
   int prev_path_size = previous_path_x.size();
 
+  // Last postion in the previous path, or the current one if no previous path
   vector<double> planned_pos = getPlannedPosition(current_pos, previous_path_x, previous_path_y,
                                                   map_waypoints_x, map_waypoints_y);
 
   // Sensor Fusion Data, a list of all other cars on the same side of the road.
   vector<vector<double>> sensor_fusion = car_data["sensor_fusion"];
+
+  // Information about other cars on the track useful to chose a next behavioral state
   const ScanStatus scan_status = scanSurroundings(current_pos, prev_path_size * move_time,
                                                   planned_pos, sensor_fusion);
 
-  //const State state = getNextState(scan_status);
+  // Getting the state with lower cost of the possible next states
   const State state = pickBestState(getNextStates(scan_status), scan_status);
 
+  // Changing lane in case of required by next state
   if (state == CHANGE_TO_LEFT_LANE) {
     lane--;
+    time_of_last_lane_change = time_reference;
   } else if (state == CHANGE_TO_RIGHT_LANE) {
     lane++;
+    time_of_last_lane_change = time_reference;
   }
 
+  // Filling a spline with to model the planned path,
+  // the last planned position is used to continue the path
   vector<vector<double>> spline_pts
       = createPathPoints(current_pos, previous_path_x, previous_path_y);
   vector<double> spline_pts_x = spline_pts[0];
@@ -68,10 +82,14 @@ vector<vector<double>> PathPlanner::updatePath(
   fillPathPoints(spline_pts_x, spline_pts_y, planned_pos,
                  map_waypoints_x, map_waypoints_y, map_waypoints_s);
 
+  // Creating the new next points using the remaining previous ones
+  // and generating new ones to continue using the spline
   vector<double> next_x;
   vector<double> next_y;
   movePreviousPointsToNext(previous_path_x, previous_path_y, next_x, next_y);
   addNextPoints(planned_pos, state, spline_pts_x, spline_pts_y, next_x, next_y, prev_path_size);
+
+  time_reference += move_time;
 
   return {next_x, next_y};
 }
@@ -198,7 +216,7 @@ void PathPlanner::addNextPoints(
     plan_shift += speed * move_time;
     double point_x = plan_shift;
     double point_y = spline(point_x);
-    // Moving points back to their position
+    // Moving points back to their previous position and angle
     tools.rotateAndTranslate(point_x, point_y, -planned_yaw, -planned_pos_x, -planned_pos_y);
     next_x.push_back(point_x);
     next_y.push_back(point_y);
@@ -236,6 +254,7 @@ ScanStatus PathPlanner::scanSurroundings(
       scan_status.carInFrontIsTooClose = true;
     }
 
+    // Estimated position of the car in the future
     checked_car_s += checked_car_speed * time_in_future;
 
     if (isCarInLane(checked_car_d, lane) &&
@@ -243,6 +262,7 @@ ScanStatus PathPlanner::scanSurroundings(
       scan_status.carInFrontIsTooClose = true;
     }
 
+    // Checkig if a change to the left lane is possible/safe
     if (lane > FIRST_LANE) {
       if (doesCarBlockLaneChange(planned_pos_s, planned_speed, checked_car_s,
                                  checked_car_d, checked_car_speed, lane - 1)) {
@@ -252,6 +272,7 @@ ScanStatus PathPlanner::scanSurroundings(
       scan_status.gapAtLeftLane = false;
     }
 
+    // Checkig if a change to the right lane is possible/safe
     if (lane < LAST_LANE) {
       if (doesCarBlockLaneChange(planned_pos_s, planned_speed, checked_car_s,
                                  checked_car_d, checked_car_speed, lane + 1)) {
@@ -261,19 +282,23 @@ ScanStatus PathPlanner::scanSurroundings(
       scan_status.gapAtRightLane = false;
     }
 
-    if (isClosestCarAheadInLane(scan_status.carAheadInFront, lane,
-                                checked_car_s, checked_car_d, planned_pos_s)) {
-      scan_status.carAheadInFront = &sensor_fusion[i];
-    }
-    if (lane > FIRST_LANE &&
-        isClosestCarAheadInLane(scan_status.carAheadAtLeftLane, lane - 1,
-                                checked_car_s, checked_car_d, planned_pos_s)) {
-      scan_status.carAheadAtLeftLane = &sensor_fusion[i];
-    }
-    if (lane < LAST_LANE &&
-        isClosestCarAheadInLane(scan_status.carAheadAtRightLane, lane + 1,
-                                checked_car_s, checked_car_d, planned_pos_s)) {
-      scan_status.carAheadAtRightLane = &sensor_fusion[i];
+    // Cars beyond the maximum visibility are ignored
+    if (checked_car_s - planned_pos_s <= max_visibily_seconds_ahead * planned_speed) {
+      // Getting the closest cars in front for the same, left and right lanes
+      if (isClosestCarAheadInLane(scan_status.carAheadInFront, lane,
+                                  checked_car_s, checked_car_d, planned_pos_s)) {
+        scan_status.carAheadInFront = &sensor_fusion[i];
+      }
+      if (lane > FIRST_LANE &&
+          isClosestCarAheadInLane(scan_status.carAheadAtLeftLane, lane - 1,
+                                  checked_car_s, checked_car_d, planned_pos_s)) {
+        scan_status.carAheadAtLeftLane = &sensor_fusion[i];
+      }
+      if (lane < LAST_LANE &&
+          isClosestCarAheadInLane(scan_status.carAheadAtRightLane, lane + 1,
+                                  checked_car_s, checked_car_d, planned_pos_s)) {
+        scan_status.carAheadAtRightLane = &sensor_fusion[i];
+      }
     }
   }
 
@@ -288,10 +313,12 @@ vector<State> PathPlanner::getNextStates(const ScanStatus &scan_status) {
   } else {
     next_states.push_back(REDUCE_SPEED);
   }
-  if (scan_status.gapAtLeftLane) {
+  if (scan_status.gapAtLeftLane &&
+      time_reference >= time_of_last_lane_change + min_time_between_lane_changes + action_seconds) {
     next_states.push_back(CHANGE_TO_LEFT_LANE);
   }
-  if (scan_status.gapAtRightLane) {
+  if (scan_status.gapAtRightLane &&
+      time_reference >= time_of_last_lane_change + min_time_between_lane_changes + action_seconds) {
     next_states.push_back(CHANGE_TO_RIGHT_LANE);
   }
 
@@ -299,6 +326,8 @@ vector<State> PathPlanner::getNextStates(const ScanStatus &scan_status) {
 }
 
 double PathPlanner::calculateCost(const State &state, const ScanStatus &scan_status) {
+  // Cost function based in the velocity of the car that would be in front in the intended lane
+  // the fastest the car the less the cost, but using the ideal speed as maximum
 
   bool lane_change = false;
   vector<double> *car_in_front = scan_status.carAheadInFront;
@@ -310,13 +339,15 @@ double PathPlanner::calculateCost(const State &state, const ScanStatus &scan_sta
     lane_change = true;
   }
 
+  // If there would be no car in front, minimizing the cost
   if (car_in_front == NULL) {
-    if (lane_change) {
+    if (lane_change) { // Putting some cost to penalize a lane change (if not really necessary)
       return exp(-ideal_speed);
     }
     return 0.0;
   }
 
+  // Using the speed of the potential car in front to calculate the cost, limited to the ideal speed
   const double car_in_front_speed
       = min(sqrt(pow(car_in_front -> at(SENSOR_FUSION_VX_IDX), 2) +
                  pow(car_in_front -> at(SENSOR_FUSION_VY_IDX), 2)),
@@ -326,7 +357,7 @@ double PathPlanner::calculateCost(const State &state, const ScanStatus &scan_sta
 
 State PathPlanner::pickBestState(const vector<State> next_states, const ScanStatus &scan_status) {
   const int no_states = next_states.size();
-
+  // It's assumed that there is at least one possible state
   State best_state = next_states[0];
   double best_cost = calculateCost(best_state, scan_status);
 
@@ -343,7 +374,7 @@ State PathPlanner::pickBestState(const vector<State> next_states, const ScanStat
 
 double PathPlanner::adjustSpeed(const double &speed, const State &state) {
   if (state == REDUCE_SPEED) {
-    return max(speed - ideal_acceleration * move_time, 0.0);
+    return max(speed - ideal_acceleration * move_time, MIN_SPEED);
   }
   if (speed > ideal_speed) {
     return max(speed - ideal_acceleration * move_time, ideal_speed);

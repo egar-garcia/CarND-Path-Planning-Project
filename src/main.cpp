@@ -21,7 +21,9 @@ const double SECURITY_SECONDS_AHEAD = 2.0; // Idealy 3 in real life, but used 2 
 const double PLANNING_SECONDS_AHEAD = 2.0; // Same as the security distance ahead
 const double ACTION_SECONDS = 2.0; // 2 secods to complete a lane change
 const double TAKEOVER_AGRESSIVITY_RATE = 0.25; // A conservative rate to takeover car behind
-const double SECURITY_REACTION_RATE = 0.75;
+const double MIN_TIME_BETWEEN_LANE_CHANGES = 1.0; // The minimum time to wait between lane changes
+const double SECURITY_REACTION_RATE = 0.75; // How far a car in front has to be to start breaking
+const double MAX_VISIBILITY_SECONDS_AHEAD = 3.5; // Maximum vision ahead in seconds
 
 // Checks if the SocketIO event has JSON data.
 // If there is data the JSON object in string format will be returned,
@@ -41,9 +43,12 @@ string hasData(string s) {
 
 int main() {
   uWS::Hub h;
+
+  // PathPlanner in charge of control the behavior and generate the path to follow
   PathPlanner path_planner(
       MAX_SPEED_MPH, MOVE_TIME, MAX_ACCELERATION, SECURITY_SECONDS_AHEAD, PLANNING_SECONDS_AHEAD,
-      ACTION_SECONDS, TAKEOVER_AGRESSIVITY_RATE, SECURITY_REACTION_RATE);
+      ACTION_SECONDS, TAKEOVER_AGRESSIVITY_RATE, MIN_TIME_BETWEEN_LANE_CHANGES,
+      SECURITY_REACTION_RATE, MAX_VISIBILITY_SECONDS_AHEAD);
 
   // Load up map values for waypoint's x,y,s and d normalized normal vectors
   vector<double> map_waypoints_x;

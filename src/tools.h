@@ -15,8 +15,10 @@ class Tools {
     double deg2rad(const double &x) { return x * pi() / 180; }
     double rad2deg(const double &x) { return x * 180 / pi(); }
 
+    // Normalizes an angle to be in the range [-pi, pi]
     double normalizeAngle(const double &x);
 
+    // For doing translations and rotations of cartesian coordinates
     void translate(double &x, double &y, const double &trans_x, const double &trans_y);
     void rotate(double &x, double &y, const double &angle);
     void translateAndRotate(double &x, double &y,
@@ -24,8 +26,10 @@ class Tools {
     void rotateAndTranslate(double &x, double &y,
                             const double &angle, const double &trans_x, const double &trans_y);
 
+    // Converts MPH to m/s
     double mph2ms(const double &x);
 
+    // Calculates the distance between two points
     double distance(const double &x1, const double &y1, const double &x2, const double &y2);
 
     // Transform from Cartesian x,y coordinates to Frenet s,d coordinates
